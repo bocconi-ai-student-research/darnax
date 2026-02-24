@@ -265,8 +265,8 @@ class RecurrentTanh(Layer):
         if gate is None:
             gate = jnp.array(1.0)
         dJ = tanh_perceptron_rule_backward(x, y, y_hat, self.tolerance)
-        dJ = self.lr * dJ + self.lr * self.weight_decay * self.J
         dJ = dJ * self._mask
+        dJ = self.lr * dJ + self.lr * self.weight_decay * self.J
         zero_update = jax.tree.map(jnp.zeros_like, self)
         new_self: Self = eqx.tree_at(lambda m: m.J, zero_update, dJ)
         return new_self
@@ -459,6 +459,7 @@ class RecurrentTanhTruncated(RecurrentTanh):
         dJ = tanh_truncated_perceptron_rule_backward(x, y, y_hat, self.threshold, self.tolerance)
         dJ = self.lr * dJ + self.lr * self.weight_decay * self.J
         dJ = dJ * self._mask
+        dJ = self.lr * dJ + self.weight_decay * self.J
         zero_update = jax.tree.map(jnp.zeros_like, self)
         new_self: Self = eqx.tree_at(lambda m: m.J, zero_update, dJ)
         return new_self
