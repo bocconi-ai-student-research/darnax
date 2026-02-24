@@ -186,7 +186,7 @@ class Conv2D(Adapter):
         self.weight_decay = jnp.asarray(weight_decay, dtype=dtype)
 
         kh, kw = self.kernel_size
-        self.lr = jnp.asarray(lr / jnp.sqrt(kh * kw * self.in_channels), dtype=dtype)
+        self.lr = jnp.asarray(lr, dtype=dtype)
 
         key, init_key = jax.random.split(key)
         self.kernel = (
@@ -264,13 +264,18 @@ class Conv2D(Adapter):
             padding_mode=self.padding_mode,
         )
 
-        dW = self.lr * grad + self.weight_decay * self.kernel * self.lr 
+        dW = self.lr * grad + self.weight_decay * self.kernel
 
         zero_update: Self = jax.tree_util.tree_map(
             jnp.zeros_like, self, is_leaf=eqx.is_inexact_array
         )
         update: Self = eqx.tree_at(lambda m: m.kernel, zero_update, dW)
         return update
+    
+    @property
+    def W(self) -> Array:
+        """Alias for kernel parameter."""
+        return self.kernel
 
 
 class Conv2DRecurrentDiscrete(Layer):
@@ -431,7 +436,7 @@ class Conv2DRecurrentDiscrete(Layer):
         cout = self.channels  # enforce Cin=Cout=channels
 
         fan_in = kh * kw * cin_g
-        self.lr = jnp.asarray(lr / jnp.sqrt(fan_in), dtype=dtype)
+        self.lr = jnp.asarray(lr, dtype=dtype)
 
         key, init_key = jax.random.split(key)
         self.kernel = jax.random.normal(
@@ -644,13 +649,24 @@ class Conv2DRecurrentDiscrete(Layer):
             padding_mode=self.padding_mode,
         )
 
-        dW = self.lr * grad + self.weight_decay * self.kernel * self.lr
+        dW = self.lr * grad + self.weight_decay * self.kernel
         dW = dW * self.update_mask
         zero_update: Self = jax.tree_util.tree_map(
             jnp.zeros_like, self, is_leaf=eqx.is_inexact_array
         )
         update: Self = eqx.tree_at(lambda m: m.kernel, zero_update, dW)
         return update
+    
+    @property
+    def J(self) -> Array:
+        """Alias for kernel parameter."""
+        return self.kernel
+    
+    @property
+    def _mask(self) -> Array:
+        """Alias for update mask parameter."""
+        return self.update_mask
+
 
 
 class Conv2DTranspose(Adapter):
@@ -666,6 +682,10 @@ class Conv2DTranspose(Adapter):
         Number of input channels.
     out_channels : int
         Number of output channels.
+    lr : float
+        Learning rate multiplier for gradient updates.
+    weight_decay : float
+        Weight decay coefficient.
     kernel_size : int or tuple[int, int]
         Size of the convolution kernel. If int, same size for both dimensions.
     threshold : float
@@ -686,6 +706,10 @@ class Conv2DTranspose(Adapter):
     ----------
     kernel : Array
         Convolution kernel of shape (Kh, Kw, in_channels, out_channels).
+    lr : Array
+        Scalar learning rate.
+    weight_decay : Array
+        Scalar weight decay coefficient.
     threshold : Array
         Scalar threshold value.
     strength : float
@@ -743,6 +767,8 @@ class Conv2DTranspose(Adapter):
     stride: int = eqx.field(static=True)  # stored as scalar
     kernel_size: tuple[int, int] = eqx.field(static=True)
     padding_mode: str | Callable[..., str] | None = eqx.field(static=True)
+    lr: Array = eqx.field(static=True)
+    weight_decay: Array = eqx.field(static=True)
 
     def __init__(
         self,
@@ -755,6 +781,8 @@ class Conv2DTranspose(Adapter):
         stride: int | tuple[int, int] = 1,
         padding_mode: str | Callable[..., str] | None = None,
         dtype: DTypeLike = jnp.float32,
+        lr: float = 1.0,
+        weight_decay: float = 0.0,
     ):
         """Initialize Conv2DTranspose adapter with proper variance scaling."""
         self.in_channels = int(in_channels)
@@ -765,6 +793,8 @@ class Conv2DTranspose(Adapter):
         self.padding_mode = padding_mode
         self.threshold = jnp.asarray(threshold, dtype=dtype)
         self.strength = float(strength)
+        self.lr = jnp.asarray(lr, dtype=dtype)
+        self.weight_decay = jnp.asarray(weight_decay, dtype=dtype)
 
         key, init_key = jax.random.split(key)
         kh, kw = self.kernel_size
@@ -820,7 +850,7 @@ class Conv2DTranspose(Adapter):
         if needed.
 
         """
-        dW = conv_transpose_backward_with_threshold(
+        grad = conv_transpose_backward_with_threshold(
             x=x,
             y=y,
             y_hat=y_hat,
@@ -829,8 +859,15 @@ class Conv2DTranspose(Adapter):
             stride=self.stride,
             padding_mode=self.padding_mode,
         )
+        dW = self.lr * grad + self.weight_decay * self.kernel
         zero_update: Self = jax.tree_util.tree_map(
             jnp.zeros_like, self, is_leaf=eqx.is_inexact_array
         )
         update: Self = eqx.tree_at(lambda m: m.kernel, zero_update, dW)
         return update
+    
+    @property
+    def W(self) -> Array:
+        """Alias for kernel parameter."""
+        return self.kernel
+
