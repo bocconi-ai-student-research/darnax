@@ -303,7 +303,9 @@ class LayerMap:
             row_keys = row_keys[:-1]
         for r_idx in row_keys:
             data = self._data[r_idx]
-            if subset == "forward":
+            if subset == "all":
+                pass
+            elif subset == "forward":
                 data = {k: v for k, v in data.items() if k <= r_idx}
             elif subset == "backward":
                 data = {k: v for k, v in data.items() if k >= r_idx}
